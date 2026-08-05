@@ -1,0 +1,10 @@
+node_modules
+dist
+.vite
+.pnpm-store
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+*.vue.js
+src/main.js
+*.local

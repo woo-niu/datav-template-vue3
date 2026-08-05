@@ -1,0 +1,11 @@
+/* 加载适合数据展示的 Inter 与中文回退字体 Noto Sans SC，保证中英文视觉一致。 */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+
+:root { font-family: Inter, 'Noto Sans SC', sans-serif; color: #dcefff; background: #030713; font-synthesis: none; }
+* { box-sizing: border-box; }
+html, body, #app { width: 100%; height: 100%; margin: 0; }
+body { overflow: hidden; background: #02050d; }
+button { font: inherit; }
+
+/* 尊重系统“减少动态效果”设置，降低动画与平滑滚动对敏感用户的影响。 */
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms!important; animation-iteration-count: 1!important; scroll-behavior: auto!important; } }
