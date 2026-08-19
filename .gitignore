@@ -8,3 +8,5 @@ vite.config.d.ts
 *.vue.js
 src/main.js
 *.local
+.ossutil_checkpoint
+ossutil_output

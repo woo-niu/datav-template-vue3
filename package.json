@@ -2,12 +2,18 @@
   "name": "city-operations-screen",
   "private": true,
   "version": "1.0.0",
+  "packageManager": "pnpm@10.27.0",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10 <11"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "typecheck": "vue-tsc -b"
+    "typecheck": "vue-tsc -b",
+    "test:ci": "node --test ci/jenkins/oss-release.test.mjs"
   },
   "dependencies": {
     "echarts": "6.1.0",

@@ -1,0 +1,8 @@
+.git
+.github
+.pnpm-store
+.vite
+dist
+node_modules
+*.tsbuildinfo
+*.local
