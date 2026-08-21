@@ -1,7 +1,14 @@
 pipeline {
   agent {
-    // 构建节点需预装 Node.js 22、pnpm 10.27.0 和 ossutil。
+    // Node.js 与 pnpm 由下方的 Jenkins NodeJS 工具注入；节点只需提供 ossutil。
+    // 保留既有标签，避免变更 Jenkins 节点标签后导致任务无法调度。
     label 'node22-ossutil'
+  }
+
+  tools {
+    // 在“Manage Jenkins > Tools”中创建同名 NodeJS 工具：Node.js 22，
+    // 并配置全局 npm 包 pnpm@10.27.0。该插件会将它们加入当前构建的 PATH。
+    nodejs 'node-22'
   }
 
   options {
