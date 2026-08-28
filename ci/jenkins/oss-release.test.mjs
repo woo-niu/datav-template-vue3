@@ -20,6 +20,7 @@ const mockOssutil = join(scriptDirectory, 'mock-ossutil.mjs')
 test('keeps releases immutable and rejects an incomplete rollback', () => {
   const tempDirectory = mkdtempSync(join(tmpdir(), 'oss-release-test-'))
   const mockRoot = join(tempDirectory, 'oss')
+  const mockEcsRoot = join(tempDirectory, 'ecs')
 
   try {
     const firstRelease = '100-a1b2c3d4'
@@ -27,16 +28,16 @@ test('keeps releases immutable and rejects an incomplete rollback', () => {
     const firstDist = createDist(tempDirectory, firstRelease)
     const secondDist = createDist(tempDirectory, secondRelease)
 
-    runRelease('deploy', firstRelease, firstDist, mockRoot)
-    assertStableRelease(mockRoot, firstRelease)
+    runRelease('deploy', firstRelease, firstDist, mockRoot, mockEcsRoot)
+    assertStableRelease(mockRoot, mockEcsRoot, firstRelease)
 
-    runRelease('deploy', secondRelease, secondDist, mockRoot)
-    assertStableRelease(mockRoot, secondRelease)
+    runRelease('deploy', secondRelease, secondDist, mockRoot, mockEcsRoot)
+    assertStableRelease(mockRoot, mockEcsRoot, secondRelease)
 
     const collidingDist = createDist(tempDirectory, firstRelease, 'changed')
-    const collidingDeploy = runRelease('deploy', firstRelease, collidingDist, mockRoot, false)
+    const collidingDeploy = runRelease('deploy', firstRelease, collidingDist, mockRoot, mockEcsRoot, false)
     assert.notEqual(collidingDeploy.status, 0)
-    assertStableRelease(mockRoot, secondRelease)
+    assertStableRelease(mockRoot, mockEcsRoot, secondRelease)
 
     const firstAsset = objectPath(
       mockRoot,
@@ -44,13 +45,13 @@ test('keeps releases immutable and rejects an incomplete rollback', () => {
     )
     rmSync(firstAsset)
 
-    const failedRollback = runRelease('rollback', firstRelease, firstDist, mockRoot, false)
+    const failedRollback = runRelease('rollback', firstRelease, firstDist, mockRoot, mockEcsRoot, false)
     assert.notEqual(failedRollback.status, 0)
-    assertStableRelease(mockRoot, secondRelease)
+    assertStableRelease(mockRoot, mockEcsRoot, secondRelease)
 
     writeFileSync(firstAsset, 'console.log("release")\n', 'utf8')
-    runRelease('rollback', firstRelease, firstDist, mockRoot)
-    assertStableRelease(mockRoot, firstRelease)
+    runRelease('rollback', firstRelease, firstDist, mockRoot, mockEcsRoot)
+    assertStableRelease(mockRoot, mockEcsRoot, firstRelease)
   } finally {
     rmSync(tempDirectory, { recursive: true, force: true })
   }
@@ -59,7 +60,7 @@ test('keeps releases immutable and rejects an incomplete rollback', () => {
 function createDist(tempDirectory, releaseId, variant = 'release') {
   const distPath = join(tempDirectory, `dist-${releaseId}-${variant}`)
   const assetsPath = join(distPath, 'assets')
-  const base = `/releases/${releaseId}/`
+  const base = `https://wn-test-deploy.oss-cn-hangzhou.aliyuncs.com/releases/${releaseId}/`
   const indexContents = `<!doctype html><script type="module" src="${base}assets/app-deadbeef.js"></script>\n`
   const assetContents = `console.log("${variant}")\n`
   mkdirSync(assetsPath, { recursive: true })
@@ -89,7 +90,7 @@ function artifactEntry(path, contents) {
   }
 }
 
-function runRelease(action, releaseId, distPath, mockRoot, expectSuccess = true) {
+function runRelease(action, releaseId, distPath, mockRoot, mockEcsRoot, expectSuccess = true) {
   const result = spawnSync(process.execPath, [releaseScript, action], {
     cwd: resolve(scriptDirectory, '../..'),
     encoding: 'utf8',
@@ -101,7 +102,13 @@ function runRelease(action, releaseId, distPath, mockRoot, expectSuccess = true)
       OSSUTIL_BOOTSTRAP: mockOssutil,
       OSS_BUCKET: 'wn-test-deploy',
       OSS_ENDPOINT: 'https://oss-cn-hangzhou.aliyuncs.com',
-      OSS_PUBLIC_ORIGIN: 'https://wn-test-deploy.oss-cn-hangzhou.aliyuncs.com',
+      OSS_STATIC_ORIGIN: 'https://wn-test-deploy.oss-cn-hangzhou.aliyuncs.com',
+      ECS_DEPLOY_HOST: '203.0.113.10',
+      ECS_DEPLOY_PORT: '22',
+      ECS_DEPLOY_USER: 'deploy',
+      ECS_DEPLOY_ROOT: '/srv/datav',
+      ECS_SITE_ORIGIN: 'http://203.0.113.10',
+      MOCK_ECS_ROOT: mockEcsRoot,
       OSS_REGION: 'cn-hangzhou',
       OSS_RELEASE_PREFIX: 'releases',
       RELEASE_ID: releaseId,
@@ -118,8 +125,8 @@ function runRelease(action, releaseId, distPath, mockRoot, expectSuccess = true)
   return result
 }
 
-function assertStableRelease(mockRoot, releaseId) {
-  const stableIndex = readFileSync(objectPath(mockRoot, 'index.html'), 'utf8')
+function assertStableRelease(mockRoot, mockEcsRoot, releaseId) {
+  const stableIndex = readFileSync(join(mockEcsRoot, 'srv', 'datav', 'index.html'), 'utf8')
   const current = JSON.parse(
     readFileSync(objectPath(mockRoot, '_deploy/current.json'), 'utf8'),
   )

@@ -39,9 +39,16 @@ pipeline {
     OSS_BUCKET = 'wn-test-deploy'
     OSS_ENDPOINT = 'https://oss-cn-hangzhou.aliyuncs.com'
     OSS_REGION = 'cn-hangzhou'
-    OSS_PUBLIC_ORIGIN = 'https://wn-test-deploy.oss-cn-hangzhou.aliyuncs.com'
-    // 静态资源以不可变的 release ID 存放在该前缀下。
+    // 构建产物中的 JS、CSS、图片等静态资源直接从 OSS 的不可变版本目录加载。
+    OSS_STATIC_ORIGIN = 'https://wn-test-deploy.oss-cn-hangzhou.aliyuncs.com'
     OSS_RELEASE_PREFIX = 'releases'
+    // 在 Jenkins 凭据中配置该 SSH 私钥；账号须能原子替换 ECS_DEPLOY_ROOT/index.html。
+    ECS_SSH_CREDENTIALS_ID = 'aliyun-ecs-static-deploy'
+    ECS_DEPLOY_HOST = 'REPLACE_WITH_ECS_DEPLOY_HOST'
+    ECS_DEPLOY_PORT = '22'
+    ECS_DEPLOY_USER = 'deploy'
+    ECS_DEPLOY_ROOT = '/srv/datav'
+    ECS_SITE_ORIGIN = 'http://REPLACE_WITH_ECS_PUBLIC_IP'
     // CI 测试阶段仅允许 jenkins-develop 分支变更测试环境稳定入口。
     OSS_DEPLOY_BRANCH = 'jenkins-develop'
   }
@@ -72,7 +79,7 @@ pipeline {
 
           // 禁止 PR 或非 jenkins-develop 分支触发部署、回滚，避免未受信任代码取得发布凭据。
           if (env.CHANGE_ID || sourceBranch != env.OSS_DEPLOY_BRANCH) {
-            error("OSS 发布和回滚只允许在受信任分支 ${env.OSS_DEPLOY_BRANCH} 执行，当前分支：${sourceBranch ?: 'unknown'}")
+            error("ECS 首页发布和 OSS 资源回滚只允许在受信任分支 ${env.OSS_DEPLOY_BRANCH} 执行，当前分支：${sourceBranch ?: 'unknown'}")
           }
 
           if (params.ACTION == 'ROLLBACK') {
@@ -89,7 +96,7 @@ pipeline {
             ).trim()
             env.RELEASE_ID = "${releaseTimestamp}-${env.BUILD_NUMBER}-${commit.substring(0, 8)}"
             // Vite 构建产物引用当前不可变版本目录，支持安全缓存与快速回滚。
-            env.VITE_BASE_PATH = "/${env.OSS_RELEASE_PREFIX}/${env.RELEASE_ID}/"
+            env.VITE_BASE_PATH = "${env.OSS_STATIC_ORIGIN}/${env.OSS_RELEASE_PREFIX}/${env.RELEASE_ID}/"
           }
 
           currentBuild.displayName = "#${env.BUILD_NUMBER} ${params.ACTION} ${env.RELEASE_ID}"
@@ -112,6 +119,8 @@ pipeline {
 
           printf '%s\n' "Node.js: $node_version" "pnpm: $pnpm_version"
           ossutil version
+          command -v ssh
+          command -v scp
         '''
         sh label: 'Test OSS release workflow', script: 'pnpm test:ci'
       }
@@ -142,16 +151,18 @@ pipeline {
         expression { params.ACTION == 'DEPLOY' }
       }
       steps {
-        withCredentials([
-          usernamePassword(
-            credentialsId: 'aliyun-oss-deploy',
-            usernameVariable: 'OSS_ACCESS_KEY_ID',
-            passwordVariable: 'OSS_ACCESS_KEY_SECRET'
-          )
-        ]) {
-          retry(2) {
-            // 脚本负责上传候选版本、校验 OSS 内容后再切换稳定入口。
-            sh label: 'Upload and promote release', script: 'node ci/jenkins/oss-release.mjs deploy'
+        sshagent(credentials: [env.ECS_SSH_CREDENTIALS_ID]) {
+          withCredentials([
+            usernamePassword(
+              credentialsId: 'aliyun-oss-deploy',
+              usernameVariable: 'OSS_ACCESS_KEY_ID',
+              passwordVariable: 'OSS_ACCESS_KEY_SECRET'
+            )
+          ]) {
+            retry(2) {
+              // 先验证 OSS 不可变版本，再原子替换 ECS 首页；静态资源不经过 ECS。
+              sh label: 'Upload static assets and switch ECS index', script: 'node ci/jenkins/oss-release.mjs deploy'
+            }
           }
         }
       }
@@ -162,16 +173,18 @@ pipeline {
         expression { params.ACTION == 'ROLLBACK' }
       }
       steps {
-        withCredentials([
-          usernamePassword(
-            credentialsId: 'aliyun-oss-deploy',
-            usernameVariable: 'OSS_ACCESS_KEY_ID',
-            passwordVariable: 'OSS_ACCESS_KEY_SECRET'
-          )
-        ]) {
-          retry(2) {
-            // 回滚不重新构建，只校验指定版本存在后切换稳定入口。
-            sh label: 'Verify and switch release', script: 'node ci/jenkins/oss-release.mjs rollback'
+        sshagent(credentials: [env.ECS_SSH_CREDENTIALS_ID]) {
+          withCredentials([
+            usernamePassword(
+              credentialsId: 'aliyun-oss-deploy',
+              usernameVariable: 'OSS_ACCESS_KEY_ID',
+              passwordVariable: 'OSS_ACCESS_KEY_SECRET'
+            )
+          ]) {
+            retry(2) {
+              // 回滚不重新构建；校验目标 OSS 版本后，原子替换 ECS 首页。
+              sh label: 'Verify release and switch ECS index', script: 'node ci/jenkins/oss-release.mjs rollback'
+            }
           }
         }
       }
@@ -180,10 +193,10 @@ pipeline {
 
   post {
     success {
-      echo "${params.ACTION} succeeded: ${env.OSS_PUBLIC_ORIGIN}/ (release ${env.RELEASE_ID})"
+      echo "${params.ACTION} succeeded: ${env.ECS_SITE_ORIGIN}/ (release ${env.RELEASE_ID})"
     }
     failure {
-      echo 'The stable index is only replaced after the candidate release passes OSS verification.'
+      echo 'The ECS index is only replaced after the candidate OSS release passes verification.'
     }
   }
 }

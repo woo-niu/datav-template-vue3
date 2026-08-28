@@ -1,10 +1,13 @@
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import {
+  copyFileSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
 } from 'node:fs'
@@ -19,7 +22,7 @@ if (!['deploy', 'rollback'].includes(action)) {
 const bucket = requiredEnv('OSS_BUCKET')
 const releaseId = requiredEnv('RELEASE_ID')
 const releasePrefix = normalizePrefix(requiredEnv('OSS_RELEASE_PREFIX'))
-const publicOrigin = requiredEnv('OSS_PUBLIC_ORIGIN').replace(/\/+$/, '')
+const staticOrigin = normalizeHttpOrigin(requiredEnv('OSS_STATIC_ORIGIN'), 'OSS_STATIC_ORIGIN')
 const ossutil = process.env.OSSUTIL_BIN?.trim() || 'ossutil'
 const ossutilBootstrap = process.env.OSSUTIL_BOOTSTRAP?.trim()
 
@@ -27,6 +30,7 @@ validateBucket(bucket)
 validateReleaseId(releaseId)
 requiredEnv('OSS_ENDPOINT')
 requiredEnv('OSS_REGION')
+const ecs = getEcsTarget()
 
 const bucketUri = `oss://${bucket}`
 const releaseKey = `${releasePrefix}/${releaseId}`
@@ -34,9 +38,8 @@ const releaseUri = `${bucketUri}/${releaseKey}`
 const candidateIndexUri = `${releaseUri}/index.html`
 const candidateManifestUri = `${releaseUri}/release.json`
 const readyManifestUri = `${releaseUri}/_READY.json`
-const stableIndexUri = `${bucketUri}/index.html`
 const currentManifestUri = `${bucketUri}/_deploy/current.json`
-const expectedBase = `/${releaseKey}/`
+const expectedAssetBase = `${staticOrigin}/${releaseKey}/`
 const immutableCache = 'public,max-age=31536000,immutable'
 const switchCache = 'no-cache,no-store,must-revalidate'
 
@@ -48,12 +51,11 @@ if (action === 'deploy') {
 }
 
 verifyReadyMarker(candidateManifest)
-promoteCandidate()
-verifyStableRelease(candidateManifest)
+promoteCandidate(candidateManifest)
 
 console.log(`${action === 'deploy' ? 'Published' : 'Rolled back'} release ${releaseId}`)
-console.log(`Stable object URL: ${publicOrigin}/index.html`)
-console.log(`Release object URL: ${publicOrigin}/${releaseKey}/index.html`)
+console.log(`ECS website URL: ${ecs.siteOrigin}/`)
+console.log(`Static asset base URL: ${expectedAssetBase}`)
 
 function uploadCandidate() {
   const distPath = resolve(process.env.DIST_DIR?.trim() || 'dist')
@@ -130,21 +132,14 @@ function verifyReadyMarker(candidateManifest) {
   })
 }
 
-function promoteCandidate() {
-  runOssutil([
-    'cp',
-    candidateIndexUri,
-    stableIndexUri,
-    '--force',
-    '--cache-control',
-    switchCache,
-    '--content-type',
-    'text/html; charset=utf-8',
-    '--metadata',
-    `release-id=${releaseId}`,
-    '--metadata-directive',
-    'REPLACE',
-  ])
+function promoteCandidate(candidateManifest) {
+  withDownloadedObject(candidateIndexUri, 'candidate-index.html', (contents, indexPath) => {
+    verifyIndex(contents.toString('utf8'), `release ${releaseId}`)
+    verifyArtifactHash(contents, candidateManifest, 'index.html', `release ${releaseId}`)
+    promoteIndexToEcs(indexPath)
+    verifyEcsIndexHash(contents)
+  })
+
   try {
     runOssutil([
       'cp',
@@ -157,31 +152,27 @@ function promoteCandidate() {
       'application/json; charset=utf-8',
     ])
   } catch (error) {
-    console.warn(`Stable index switched, but current.json was not updated: ${error.message}`)
+    console.warn(`ECS index switched, but current.json was not updated: ${error.message}`)
   }
-}
-
-function verifyStableRelease(candidateManifest) {
-  withDownloadedObject(stableIndexUri, 'stable-index.html', (contents) => {
-    verifyIndex(contents.toString('utf8'), 'stable index')
-    verifyArtifactHash(contents, candidateManifest, 'index.html', 'stable index')
-  })
 }
 
 function verifyIndex(index, source) {
-  if (!index.includes(expectedBase)) {
-    throw new Error(`${source} does not reference expected base path ${expectedBase}`)
+  if (!index.includes(expectedAssetBase)) {
+    throw new Error(`${source} does not reference expected asset base URL ${expectedAssetBase}`)
   }
 
-  const assetPaths = [...index.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
+  const assetUrls = [...index.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
     .map((match) => match[1])
-    .filter((path) => path.startsWith(expectedBase) && path !== expectedBase)
+    .filter((url) => url.startsWith(expectedAssetBase) && url !== expectedAssetBase)
 
-  if (assetPaths.length === 0) {
+  if (assetUrls.length === 0) {
     throw new Error(`${source} contains no versioned asset references`)
   }
 
-  return [...new Set(assetPaths)].map((path) => `${bucketUri}/${path.slice(1)}`)
+  return [...new Set(assetUrls)].map((assetUrl) => {
+    const path = new URL(assetUrl).pathname
+    return `${bucketUri}/${path.slice(1)}`
+  })
 }
 
 function verifyManifest(contents, source) {
@@ -244,12 +235,75 @@ function withDownloadedObject(uri, fileName, inspect) {
   const destination = join(tempDirectory, basename(fileName))
   try {
     runOssutil(['cp', uri, destination, '--force'])
-    inspect(readFileSync(destination))
+    inspect(readFileSync(destination), destination)
   } finally {
     rmSync(tempDirectory, { recursive: true, force: true })
   }
 }
 
+function promoteIndexToEcs(sourcePath) {
+  if (process.env.MOCK_ECS_ROOT?.trim()) {
+    const mockRoot = resolve(process.env.MOCK_ECS_ROOT.trim())
+    const targetDirectory = join(mockRoot, ...ecs.root.split('/').filter(Boolean))
+    const stagedIndexPath = join(targetDirectory, `.index.html.${releaseId}`)
+    mkdirSync(targetDirectory, { recursive: true })
+    copyFileSync(sourcePath, stagedIndexPath)
+    renameSync(stagedIndexPath, join(targetDirectory, 'index.html'))
+    return
+  }
+
+  const stagedIndexPath = `${ecs.root}/.index.html.${releaseId}`
+  runSsh(['-o', 'BatchMode=yes', '-p', ecs.port, ecs.target, `mkdir -p ${ecs.root} && chmod 0755 ${ecs.root}`])
+  runScp(['-o', 'BatchMode=yes', '-P', ecs.port, sourcePath, `${ecs.target}:${stagedIndexPath}`])
+  runSsh(['-o', 'BatchMode=yes', '-p', ecs.port, ecs.target, `mv -f ${stagedIndexPath} ${ecs.indexPath}`])
+}
+
+function verifyEcsIndexHash(expectedContents) {
+  const expectedHash = createHash('sha256').update(expectedContents).digest('hex')
+  let actualHash
+
+  if (process.env.MOCK_ECS_ROOT?.trim()) {
+    const mockRoot = resolve(process.env.MOCK_ECS_ROOT.trim())
+    const indexPath = join(mockRoot, ...ecs.root.split('/').filter(Boolean), 'index.html')
+    actualHash = createHash('sha256').update(readFileSync(indexPath)).digest('hex')
+  } else {
+    const result = runSsh([
+      '-o', 'BatchMode=yes',
+      '-p', ecs.port,
+      ecs.target,
+      `sha256sum ${ecs.indexPath}`,
+    ], true)
+    actualHash = result.stdout.trim().split(/\s+/, 1)[0]
+  }
+
+  if (actualHash !== expectedHash) {
+    throw new Error(`ECS stable index failed SHA-256 verification for release ${releaseId}`)
+  }
+}
+
+function runSsh(args, captureOutput = false) {
+  return runProgram('ssh', args, captureOutput)
+}
+
+function runScp(args) {
+  runProgram('scp', args)
+}
+
+function runProgram(command, args, captureOutput = false) {
+  const result = spawnSync(command, args, {
+    encoding: captureOutput ? 'utf8' : undefined,
+    shell: false,
+    stdio: captureOutput ? 'pipe' : 'inherit',
+  })
+
+  if (result.error) {
+    throw result.error
+  }
+  if (result.status !== 0) {
+    throw new Error(`${command} exited with status ${result.status}`)
+  }
+  return result
+}
 function runOssutil(args) {
   const commandArgs = ossutilBootstrap ? [ossutilBootstrap, ...args] : args
   console.log(`+ ${ossutil} ${commandArgs.map(formatArgument).join(' ')}`)
@@ -287,6 +341,66 @@ function requiredEnv(name) {
   return value
 }
 
+function getEcsTarget() {
+  const host = requiredEnv('ECS_DEPLOY_HOST')
+  const user = requiredEnv('ECS_DEPLOY_USER')
+  const port = requiredEnv('ECS_DEPLOY_PORT')
+  const root = normalizeEcsRoot(requiredEnv('ECS_DEPLOY_ROOT'))
+  const siteOrigin = normalizeHttpOrigin(requiredEnv('ECS_SITE_ORIGIN'), 'ECS_SITE_ORIGIN')
+
+  if (!/^[A-Za-z0-9.-]+$/.test(host) || host.startsWith('.') || host.endsWith('.')) {
+    throw new Error(`Invalid ECS_DEPLOY_HOST: ${host}`)
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_-]{0,31}$/.test(user)) {
+    throw new Error(`Invalid ECS_DEPLOY_USER: ${user}`)
+  }
+  if (!/^[1-9]\d{0,4}$/.test(port) || Number(port) > 65535) {
+    throw new Error(`Invalid ECS_DEPLOY_PORT: ${port}`)
+  }
+
+  return {
+    host,
+    user,
+    port,
+    root,
+    indexPath: `${root}/index.html`,
+    target: `${user}@${host}`,
+    siteOrigin,
+  }
+}
+
+function normalizeHttpOrigin(value, name) {
+  let url
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error(`Invalid ${name}: ${value}`)
+  }
+  if (
+    !['http:', 'https:'].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error(`${name} must be an http(s) origin without a path, query, or fragment`)
+  }
+  return url.origin
+}
+
+function normalizeEcsRoot(value) {
+  const normalized = value.replace(/\/+$/, '')
+  const segments = normalized.split('/').filter(Boolean)
+  if (
+    !normalized.startsWith('/') ||
+    !segments.length ||
+    segments.some((segment) => !/^[A-Za-z0-9._-]+$/.test(segment) || segment === '.' || segment === '..')
+  ) {
+    throw new Error(`Invalid ECS_DEPLOY_ROOT: ${value}`)
+  }
+  return `/${segments.join('/')}`
+}
 function validateBucket(value) {
   if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(value)) {
     throw new Error(`Invalid OSS bucket name: ${value}`)
