@@ -36,19 +36,22 @@ pipeline {
 
   environment {
     CI = 'true'
-    OSS_BUCKET = 'wn-test-deploy'
-    OSS_ENDPOINT = 'https://oss-cn-hangzhou.aliyuncs.com'
+    OSS_BUCKET = 'deploy-nginx-oss'
+    // Jenkins deployment node uses the Hangzhou classic-network OSS internal endpoint.
+    OSS_ENDPOINT = 'https://oss-cn-hangzhou-internal.aliyuncs.com'
     OSS_REGION = 'cn-hangzhou'
     // 构建产物中的 JS、CSS、图片等静态资源直接从 OSS 的不可变版本目录加载。
-    OSS_STATIC_ORIGIN = 'https://wn-test-deploy.oss-cn-hangzhou.aliyuncs.com'
+    OSS_STATIC_ORIGIN = 'https://deploy-nginx-oss.oss-cn-hangzhou.aliyuncs.com'
+    // Keep release-manifest URLs publicly reachable; never use the OSS internal hostname.
+    OSS_PUBLIC_ORIGIN = 'https://deploy-nginx-oss.oss-cn-hangzhou.aliyuncs.com'
     OSS_RELEASE_PREFIX = 'releases'
     // 在 Jenkins 凭据中配置该 SSH 私钥；账号须能原子替换 ECS_DEPLOY_ROOT/index.html。
     ECS_SSH_CREDENTIALS_ID = 'aliyun-ecs-static-deploy'
-    ECS_DEPLOY_HOST = 'REPLACE_WITH_ECS_DEPLOY_HOST'
+    ECS_DEPLOY_HOST = '127.0.0.1'
     ECS_DEPLOY_PORT = '22'
     ECS_DEPLOY_USER = 'deploy'
     ECS_DEPLOY_ROOT = '/srv/datav'
-    ECS_SITE_ORIGIN = 'http://REPLACE_WITH_ECS_PUBLIC_IP'
+    ECS_SITE_ORIGIN = 'http://8.217.252.217'
     // CI 测试阶段仅允许受保护的 nginx-oss-deploy 分支变更测试环境稳定入口。
     OSS_DEPLOY_BRANCH = 'nginx-oss-deploy'
   }
