@@ -24,7 +24,7 @@ Checkout → Initialize → Install* → Build* → Publish*
 | `ECS_DEPLOY_HOST` / `ECS_DEPLOY_PORT` / `ECS_DEPLOY_USER` | Jenkins Agent 连接 ECS 的地址与部署账号。 |
 | `ECS_DEPLOY_ROOT` | ECS 上保存稳定 `index.html` 的目录；发布脚本原子更新该目录下的首页。 |
 | `ECS_SITE_ORIGIN` | 对用户显示的站点入口，例如 `http://<ECS 公网 IP>`。它必须与 OSS CORS 允许的来源匹配。 |
-| `OSS_DEPLOY_BRANCH` | 唯一可执行发布或回滚的受保护分支。 |
+| `OSS_DEPLOY_BRANCH` | 唯一可执行发布或回滚的受保护分支；当前配置为 `nginx-oss-deploy`。 |
 
 部署前必须将 `ECS_DEPLOY_HOST` 与 `ECS_SITE_ORIGIN` 的占位符替换为真实值；不要将这些主机信息、SSH 私钥或 OSS AccessKey 写入前端环境文件。
 

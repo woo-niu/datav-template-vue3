@@ -49,8 +49,8 @@ pipeline {
     ECS_DEPLOY_USER = 'deploy'
     ECS_DEPLOY_ROOT = '/srv/datav'
     ECS_SITE_ORIGIN = 'http://REPLACE_WITH_ECS_PUBLIC_IP'
-    // CI 测试阶段仅允许 jenkins-develop 分支变更测试环境稳定入口。
-    OSS_DEPLOY_BRANCH = 'jenkins-develop'
+    // CI 测试阶段仅允许受保护的 nginx-oss-deploy 分支变更测试环境稳定入口。
+    OSS_DEPLOY_BRANCH = 'nginx-oss-deploy'
   }
 
   stages {
@@ -77,7 +77,7 @@ pipeline {
           def sourceBranch = env.BRANCH_NAME ?: env.CHECKED_OUT_BRANCH ?: env.GIT_BRANCH
           sourceBranch = sourceBranch?.replaceFirst(/^origin\//, '')
 
-          // 禁止 PR 或非 jenkins-develop 分支触发部署、回滚，避免未受信任代码取得发布凭据。
+          // 禁止 PR 或非受保护分支触发部署、回滚，避免未受信任代码取得发布凭据。
           if (env.CHANGE_ID || sourceBranch != env.OSS_DEPLOY_BRANCH) {
             error("ECS 首页发布和 OSS 资源回滚只允许在受信任分支 ${env.OSS_DEPLOY_BRANCH} 执行，当前分支：${sourceBranch ?: 'unknown'}")
           }
