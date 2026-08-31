@@ -157,7 +157,7 @@ pipeline {
         sshagent(credentials: [env.ECS_SSH_CREDENTIALS_ID]) {
           withCredentials([
             usernamePassword(
-              credentialsId: 'aliyun-oss-deploy',
+              credentialsId: 'aliyun-ecs-oss',
               usernameVariable: 'OSS_ACCESS_KEY_ID',
               passwordVariable: 'OSS_ACCESS_KEY_SECRET'
             )
@@ -179,7 +179,7 @@ pipeline {
         sshagent(credentials: [env.ECS_SSH_CREDENTIALS_ID]) {
           withCredentials([
             usernamePassword(
-              credentialsId: 'aliyun-oss-deploy',
+              credentialsId: 'aliyun-ecs-oss',
               usernameVariable: 'OSS_ACCESS_KEY_ID',
               passwordVariable: 'OSS_ACCESS_KEY_SECRET'
             )
