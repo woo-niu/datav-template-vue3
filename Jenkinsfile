@@ -38,7 +38,7 @@ pipeline {
     CI = 'true'
     OSS_BUCKET = 'deploy-nginx-oss'
     // Jenkins deployment node uses the Hangzhou classic-network OSS internal endpoint.
-    OSS_ENDPOINT = 'https://oss-cn-hangzhou-internal.aliyuncs.com'
+    OSS_ENDPOINT = 'https://oss-cn-hangzhou.aliyuncs.com'
     OSS_REGION = 'cn-hangzhou'
     // 构建产物中的 JS、CSS、图片等静态资源直接从 OSS 的不可变版本目录加载。
     OSS_STATIC_ORIGIN = 'https://deploy-nginx-oss.oss-cn-hangzhou.aliyuncs.com'
