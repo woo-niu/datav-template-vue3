@@ -25,6 +25,7 @@ const releasePrefix = normalizePrefix(requiredEnv('OSS_RELEASE_PREFIX'))
 const staticOrigin = normalizeHttpOrigin(requiredEnv('OSS_STATIC_ORIGIN'), 'OSS_STATIC_ORIGIN')
 const ossutil = process.env.OSSUTIL_BIN?.trim() || 'ossutil'
 const ossutilBootstrap = process.env.OSSUTIL_BOOTSTRAP?.trim()
+const sshIdentityFile = process.env.ECS_SSH_KEY_FILE?.trim()
 
 validateBucket(bucket)
 validateReleaseId(releaseId)
@@ -282,11 +283,19 @@ function verifyEcsIndexHash(expectedContents) {
 }
 
 function runSsh(args, captureOutput = false) {
-  return runProgram('ssh', args, captureOutput)
+  return runProgram('ssh', withSshIdentity(args), captureOutput)
 }
 
 function runScp(args) {
-  runProgram('scp', args)
+  runProgram('scp', withSshIdentity(args))
+}
+
+function withSshIdentity(args) {
+  if (!sshIdentityFile) {
+    return args
+  }
+
+  return ['-i', sshIdentityFile, '-o', 'IdentitiesOnly=yes', ...args]
 }
 
 function runProgram(command, args, captureOutput = false) {

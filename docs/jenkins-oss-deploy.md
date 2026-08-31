@@ -15,7 +15,7 @@
 
 配置两个 Jenkins 凭据：
 
-- `aliyun-oss-deploy`：OSS 的 AccessKey。该账号至少需要读取、写入 `oss://<bucket>/releases/*` 以及更新 `oss://<bucket>/_deploy/current.json` 的权限。
+- `aliyun-ecs-oss`：OSS 的 AccessKey。该账号至少需要读取、写入 `oss://<bucket>/releases/*` 以及更新 `oss://<bucket>/_deploy/current.json` 的权限。
 - `aliyun-ecs-static-deploy`：ECS 上 `deploy` 用户的 SSH 私钥。公钥写入该用户的 `~/.ssh/authorized_keys`；Agent 应预先保存 ECS 主机指纹，避免关闭 SSH 主机校验。
 
 `Jenkinsfile` 中的 `ECS_*` 默认值为占位符。运行生产发布前必须替换为实际 ECS 信息：

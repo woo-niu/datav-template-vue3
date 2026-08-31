@@ -154,7 +154,13 @@ pipeline {
         expression { params.ACTION == 'DEPLOY' }
       }
       steps {
-        sshagent(credentials: [env.ECS_SSH_CREDENTIALS_ID]) {
+        withCredentials([
+          sshUserPrivateKey(
+            credentialsId: env.ECS_SSH_CREDENTIALS_ID,
+            keyFileVariable: 'ECS_SSH_KEY_FILE',
+            usernameVariable: 'ECS_SSH_CREDENTIAL_USERNAME'
+          )
+        ]) {
           withCredentials([
             usernamePassword(
               credentialsId: 'aliyun-ecs-oss',
@@ -176,7 +182,13 @@ pipeline {
         expression { params.ACTION == 'ROLLBACK' }
       }
       steps {
-        sshagent(credentials: [env.ECS_SSH_CREDENTIALS_ID]) {
+        withCredentials([
+          sshUserPrivateKey(
+            credentialsId: env.ECS_SSH_CREDENTIALS_ID,
+            keyFileVariable: 'ECS_SSH_KEY_FILE',
+            usernameVariable: 'ECS_SSH_CREDENTIAL_USERNAME'
+          )
+        ]) {
           withCredentials([
             usernamePassword(
               credentialsId: 'aliyun-ecs-oss',
