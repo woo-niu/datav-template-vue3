@@ -254,7 +254,7 @@ function promoteIndexToEcs(sourcePath) {
   }
 
   const stagedIndexPath = `${ecs.root}/.index.html.${releaseId}`
-  runSsh(['-o', 'BatchMode=yes', '-p', ecs.port, ecs.target, `mkdir -p ${ecs.root} && chmod 0755 ${ecs.root}`])
+  runSsh(['-o', 'BatchMode=yes', '-p', ecs.port, ecs.target, `mkdir -p ${ecs.root}`])
   runScp(['-o', 'BatchMode=yes', '-P', ecs.port, sourcePath, `${ecs.target}:${stagedIndexPath}`])
   runSsh(['-o', 'BatchMode=yes', '-p', ecs.port, ecs.target, `mv -f ${stagedIndexPath} ${ecs.indexPath}`])
 }
